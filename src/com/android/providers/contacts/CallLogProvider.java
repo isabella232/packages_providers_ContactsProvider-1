@@ -50,11 +50,11 @@ import android.telecom.TelecomManager;
 import android.text.TextUtils;
 import android.util.Log;
 import com.android.internal.telephony.PhoneConstants;
+import com.android.internal.annotations.VisibleForTesting;
 import com.android.providers.contacts.CallLogDatabaseHelper.DbProperties;
 import com.android.providers.contacts.CallLogDatabaseHelper.Tables;
 import com.android.providers.contacts.util.SelectionBuilder;
 import com.android.providers.contacts.util.UserUtils;
-import com.google.common.annotations.VisibleForTesting;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
@@ -161,6 +161,19 @@ public class CallLogProvider extends ContentProvider {
                 CallLogDatabaseHelper.CALLS_OPERATOR);
     }
 
+    private static final String ALLOWED_PACKAGE_FOR_TESTING = "com.android.providers.contacts";
+
+    @VisibleForTesting
+    static final String PARAM_KEY_QUERY_FOR_TESTING = "query_for_testing";
+
+    /**
+     * A long to override the clock used for timestamps, or "null" to reset to the system clock.
+     */
+    @VisibleForTesting
+    static final String PARAM_KEY_SET_TIME_FOR_TESTING = "set_time_for_testing";
+
+    private static Long sTimeForTestMillis;
+
     private HandlerThread mBackgroundThread;
     private Handler mBackgroundHandler;
     private volatile CountDownLatch mReadAccessLatch;
@@ -231,6 +244,9 @@ public class CallLogProvider extends ContentProvider {
                     "  order=[" + sortOrder + "] CPID=" + Binder.getCallingPid() +
                     " User=" + UserUtils.getCurrentUserHandle(getContext()));
         }
+
+        queryForTesting(uri);
+
         waitForAccess(mReadAccessLatch);
         final SQLiteQueryBuilder qb = new SQLiteQueryBuilder();
         qb.setTables(Tables.CALLS);
@@ -286,6 +302,30 @@ public class CallLogProvider extends ContentProvider {
             c.setNotificationUri(getContext().getContentResolver(), CallLog.CONTENT_URI);
         }
         return c;
+    }
+
+    private void queryForTesting(Uri uri) {
+        if (!uri.getBooleanQueryParameter(PARAM_KEY_QUERY_FOR_TESTING, false)) {
+            return;
+        }
+        if (!getCallingPackage().equals(ALLOWED_PACKAGE_FOR_TESTING)) {
+            throw new IllegalArgumentException("query_for_testing set from foreign package "
+                    + getCallingPackage());
+        }
+
+        String timeString = uri.getQueryParameter(PARAM_KEY_SET_TIME_FOR_TESTING);
+        if (timeString != null) {
+            if (timeString.equals("null")) {
+                sTimeForTestMillis = null;
+            } else {
+                sTimeForTestMillis = Long.parseLong(timeString);
+            }
+        }
+    }
+
+    @VisibleForTesting
+    static Long getTimeForTestMillis() {
+        return sTimeForTestMillis;
     }
 
     /**
